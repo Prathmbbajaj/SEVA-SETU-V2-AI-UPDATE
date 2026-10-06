@@ -1656,6 +1656,13 @@ const state = {
   selectedService: "electrician",
   selectedSubService: null,
   selectedSubServices: [],
+  // Multilingual AI Chatbot Assistant State
+  aiChatOpen: false,
+  aiChatLanguage: "auto",
+  aiChatMessages: [],
+  aiVoiceListening: false,
+  aiTtsEnabled: true,
+  aiSpeechRecognition: null,
   currentCustomerName: "Aarav Mehta",
   currentCustomerPhone: "+91 98765 43210",
   currentCustomerLocation: "Connaught Place, New Delhi",
@@ -2240,6 +2247,7 @@ document.addEventListener("DOMContentLoaded", () => {
   safeInit("ministry discipline desk", initDisciplineDesk);
   safeInit("ministry growth analytics", initMinistryGrowthAnalytics);
   safeInit("backend health check", checkBackendHealth);
+  safeInit("ai chatbot", initAiChatbot);
 
   // Periodic simulated ticker updates
   setInterval(pushLiveTickerEvent, 14000);
@@ -10064,11 +10072,21 @@ if (typeof window !== "undefined") {
       cancelCitizenAuth();
       return;
     }
+    const aiModal = document.getElementById("modal-ai-chatbot");
+    if (aiModal && !aiModal.classList.contains("hidden") && e.target === aiModal) {
+      closeAiChatModal();
+      return;
+    }
   });
 
   // Global escape key dismissal
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      const aiModal = document.getElementById("modal-ai-chatbot");
+      if (aiModal && !aiModal.classList.contains("hidden") && aiModal.style.display !== "none") {
+        closeAiChatModal();
+        return;
+      }
       const workerGateModal = document.getElementById("modal-worker-auth-gate");
       if (workerGateModal && !workerGateModal.classList.contains("hidden") && workerGateModal.style.display !== "none") {
         cancelWorkerAuthGate();
@@ -10109,6 +10127,1115 @@ if (typeof window !== "undefined") {
   });
 }
 
+// ==========================================
+// MULTILINGUAL AI CHATBOT & VOICE ASSISTANT (SEVA MITRA)
+// ==========================================
 
+function initAiChatbot() {
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
 
+  // Render initial greeting if messages container is empty
+  if (!container.children || container.children.length === 0 || state.aiChatMessages.length === 0) {
+    const isHi = state.currentLanguage === "hi";
+    const welcomeHtml = `
+      <div class="p-4 bg-gradient-to-br from-indigo-950/80 via-slate-900/90 to-blue-950/80 rounded-2xl border border-indigo-500/40 text-blue-100 shadow-md space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-600 flex items-center justify-center text-white shadow-sm">
+              <i data-lucide="bot" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <span class="font-black text-xs text-amber-300 block">${isHi ? "नमस्ते! मैं सेवा मित्र हूँ" : "Namaste! I am Seva Mitra"}</span>
+              <span class="text-[10px] text-blue-200">${isHi ? "आपका बहुभाषी सहकारी एआई सहायक" : "Multilingual Cooperative AI Assistant"}</span>
+            </div>
+          </div>
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+            Active 24x7
+          </span>
+        </div>
+        <p class="text-xs leading-relaxed text-slate-200">
+          ${isHi 
+            ? "घर की किसी भी समस्या को <b>बोलकर (माइक्रोफोन)</b> या <b>टाइप करके</b> बताएं। जैसे: <i>'नल से पानी टपक रहा है'</i>, <i>'कमरे का पंखा खराब है'</i>, या <i>'सोफा और किचन की सफाई चाहिए'</i>। मैं तुरंत सही सेवा और उसके उप-कार्य (Sub-services) चुन लूँगा!"
+            : "Describe what is broken using <b>voice speech</b> or <b>typed text</b>. For example: <i>'I have water leaking'</i>, <i>'Ceiling fan broken'</i>, <i>'Door lock jammed'</i>, or <i>'Need sofa cleaning'</i>. I will automatically select the right cooperative trade and specific sub-services for you!"}
+        </p>
+        <div class="pt-2 border-t border-indigo-500/30 flex items-center justify-between text-[11px] text-blue-300">
+          <div class="flex items-center gap-1.5">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+            <span class="font-semibold">100% Direct Fair Wage to Worker &bull; 0% Middleman Cut</span>
+          </div>
+        </div>
+      </div>
+    `;
+    container.innerHTML = welcomeHtml;
+    safeCreateIcons();
+  }
+}
+
+function openAiChatModal(startVoice = false) {
+  try {
+    if (typeof sfx !== "undefined" && sfx && typeof sfx.playClick === "function") {
+      sfx.playClick();
+    }
+  } catch (e) {}
+
+  const modal = document.getElementById("modal-ai-chatbot");
+  if (!modal) {
+    console.error("modal-ai-chatbot element not found in DOM");
+    return;
+  }
+
+  // Ensure modal is a direct child of document.body so no parent modal/toast can ever trap it
+  if (modal.parentElement && typeof document !== "undefined" && document.body && typeof document.body.appendChild === "function" && modal.parentElement !== document.body) {
+    try {
+      document.body.appendChild(modal);
+    } catch (e) {}
+  }
+
+  // Ensure message container is ready
+  try {
+    initAiChatbot();
+  } catch (e) {
+    console.warn("initAiChatbot non-fatal:", e);
+  }
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+  document.body.classList.add("overflow-hidden");
+  state.aiChatOpen = true;
+
+  const windowEl = document.getElementById("ai-chat-window");
+  if (windowEl) {
+    windowEl.classList.add("open");
+  }
+
+  // Update floating launcher button state
+  const iconBot = document.getElementById("ai-launcher-icon-bot");
+  const iconClose = document.getElementById("ai-launcher-icon-close");
+  const badge = document.getElementById("ai-launcher-badge");
+  const tooltip = document.getElementById("ai-launcher-tooltip");
+  if (iconBot) iconBot.classList.add("hidden");
+  if (iconClose) iconClose.classList.remove("hidden");
+  if (badge) badge.classList.add("hidden");
+  if (tooltip) tooltip.classList.add("hidden");
+
+  safeCreateIcons();
+
+  // Scroll messages to bottom and focus input or trigger mic
+  setTimeout(() => {
+    scrollAiMessagesToBottom();
+    const input = document.getElementById("ai-chat-input");
+    if (input) input.focus();
+
+    if (startVoice) {
+      startAiVoiceInput();
+    }
+  }, 150);
+}
+
+function closeAiChatModal() {
+  try {
+    if (typeof sfx !== "undefined" && sfx && typeof sfx.playClick === "function") {
+      sfx.playClick();
+    }
+  } catch (e) {}
+
+  const modal = document.getElementById("modal-ai-chatbot");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+
+  const windowEl = document.getElementById("ai-chat-window");
+  if (windowEl) {
+    windowEl.classList.remove("open");
+  }
+
+  document.body.classList.remove("overflow-hidden");
+  state.aiChatOpen = false;
+
+  // Stop any active speech recognition
+  stopAiVoiceInput();
+
+  // Cancel any ongoing TTS voice readback
+  if ("speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {}
+  }
+
+  // Restore floating launcher button state
+  const iconBot = document.getElementById("ai-launcher-icon-bot");
+  const iconClose = document.getElementById("ai-launcher-icon-close");
+  if (iconBot) iconBot.classList.remove("hidden");
+  if (iconClose) iconClose.classList.add("hidden");
+
+  safeCreateIcons();
+}
+
+function toggleAiChat(forceOpen) {
+  const modal = document.getElementById("modal-ai-chatbot");
+  const isHidden = !modal || modal.classList.contains("hidden") || modal.style.display === "none";
+  const shouldOpen = typeof forceOpen === "boolean" ? forceOpen : isHidden;
+
+  if (shouldOpen) {
+    openAiChatModal(false);
+  } else {
+    closeAiChatModal();
+  }
+}
+
+function setAiChatLanguage(lang) {
+  state.aiChatLanguage = lang;
+  const langLabels = {
+    auto: "Auto-Detect Language (🌐)",
+    en: "English",
+    hi: "हिंदी (Hindi)",
+    gu: "ગુજરાતી (Gujarati)",
+    mr: "मराठी (Marathi)",
+    bn: "বাংলা (Bengali)",
+    ta: "தமிழ் (Tamil)"
+  };
+  showToast(`AI language set to: ${langLabels[lang] || lang}`, "info");
+}
+
+function toggleAiTts() {
+  state.aiTtsEnabled = !state.aiTtsEnabled;
+  const icon = document.getElementById("ai-tts-icon");
+  if (icon) {
+    icon.setAttribute("data-lucide", state.aiTtsEnabled ? "volume-2" : "volume-x");
+    safeCreateIcons();
+  }
+  if (!state.aiTtsEnabled && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+  showToast(state.aiTtsEnabled ? "AI voice read-aloud enabled" : "AI voice read-aloud muted", "info");
+}
+
+function startAiVoiceFromBanner() {
+  openAiChatModal(true);
+}
+
+function toggleAiVoiceRecording() {
+  if (state.aiVoiceListening) {
+    stopAiVoiceInput();
+  } else {
+    startAiVoiceInput();
+  }
+}
+
+function startAiVoiceInput() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    showToast("Speech recognition is not available in this browser. Please type or tap quick chips!", "warning");
+    const input = document.getElementById("ai-chat-input");
+    if (input) {
+      input.placeholder = "Speech unavailable: type e.g. 'water leaking'...";
+      input.focus();
+    }
+    return;
+  }
+
+  // Stop any existing instance
+  stopAiVoiceInput();
+
+  try {
+    if (typeof sfx !== "undefined" && sfx && typeof sfx.playClick === "function") {
+      sfx.playClick();
+    }
+  } catch (e) {}
+  const recognition = new SpeechRecognition();
+  state.aiSpeechRecognition = recognition;
+
+  // Determine language code
+  let langCode = "en-IN";
+  if (state.aiChatLanguage === "hi" || state.currentLanguage === "hi") {
+    langCode = "hi-IN";
+  } else if (state.aiChatLanguage === "gu") {
+    langCode = "gu-IN";
+  } else if (state.aiChatLanguage === "mr") {
+    langCode = "mr-IN";
+  } else if (state.aiChatLanguage === "bn") {
+    langCode = "bn-IN";
+  } else if (state.aiChatLanguage === "ta") {
+    langCode = "ta-IN";
+  } else if (state.aiChatLanguage === "en") {
+    langCode = "en-IN";
+  } else {
+    langCode = state.currentLanguage === "hi" ? "hi-IN" : "en-IN";
+  }
+
+  recognition.lang = langCode;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  const listeningBar = document.getElementById("ai-voice-listening-bar");
+  const micBtn = document.getElementById("ai-mic-btn");
+  const statusTxt = document.getElementById("ai-voice-status-text");
+
+  if (listeningBar) listeningBar.classList.remove("hidden");
+  if (micBtn) {
+    micBtn.classList.add("bg-red-500/30", "text-red-400", "animate-pulse");
+  }
+  if (statusTxt) {
+    statusTxt.innerText = `Listening in ${langCode}... Speak now`;
+  }
+  state.aiVoiceListening = true;
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    state.aiVoiceListening = false;
+    if (listeningBar) listeningBar.classList.add("hidden");
+    if (micBtn) {
+      micBtn.classList.remove("bg-red-500/30", "text-red-400", "animate-pulse");
+    }
+
+    const input = document.getElementById("ai-chat-input");
+    if (input) input.value = transcript;
+    
+    // Auto submit recognized voice message
+    sendAiChatMessage(transcript, true);
+  };
+
+  recognition.onerror = (event) => {
+    state.aiVoiceListening = false;
+    if (listeningBar) listeningBar.classList.add("hidden");
+    if (micBtn) {
+      micBtn.classList.remove("bg-red-500/30", "text-red-400", "animate-pulse");
+    }
+    console.warn("Speech recognition error:", event.error);
+    if (event.error !== "no-speech") {
+      showToast(`Voice input: ${event.error}. You can also type your problem.`, "info");
+    }
+  };
+
+  recognition.onend = () => {
+    state.aiVoiceListening = false;
+    if (listeningBar) listeningBar.classList.add("hidden");
+    if (micBtn) {
+      micBtn.classList.remove("bg-red-500/30", "text-red-400", "animate-pulse");
+    }
+  };
+
+  try {
+    recognition.start();
+  } catch (err) {
+    console.warn("Could not start SpeechRecognition:", err);
+  }
+}
+
+function stopAiVoiceInput() {
+  if (state.aiSpeechRecognition) {
+    try {
+      state.aiSpeechRecognition.stop();
+    } catch (e) {}
+    state.aiSpeechRecognition = null;
+  }
+  state.aiVoiceListening = false;
+  const listeningBar = document.getElementById("ai-voice-listening-bar");
+  const micBtn = document.getElementById("ai-mic-btn");
+  if (listeningBar) listeningBar.classList.add("hidden");
+  if (micBtn) {
+    micBtn.classList.remove("bg-red-500/30", "text-red-400", "animate-pulse");
+  }
+}
+
+function sendQuickPrompt(promptText) {
+  toggleAiChat(true);
+  sendAiChatMessage(promptText, false);
+}
+
+function handleAiChatSubmit(e) {
+  if (e) e.preventDefault();
+  const input = document.getElementById("ai-chat-input");
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  sendAiChatMessage(text, false);
+}
+
+function scrollAiMessagesToBottom() {
+  const container = document.getElementById("ai-chat-messages");
+  if (container) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatMarkdownReply(text) {
+  if (!text) return "";
+  let formatted = escapeHtml(text);
+  // Bold **text**
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>');
+  // Italic *text*
+  formatted = formatted.replace(/\*(.*?)\*/g, '<em class="text-blue-200">$1</em>');
+  // Bullets • or -
+  formatted = formatted.replace(/(?:^|\n)[•\-]\s+(.*)/g, '<div class="flex items-start gap-1.5 ml-1 mt-0.5"><span class="text-amber-400">•</span><span>$1</span></div>');
+  // Newlines
+  formatted = formatted.replace(/\n\n/g, '<div class="h-2"></div>');
+  formatted = formatted.replace(/\n/g, '<br/>');
+  return formatted;
+}
+
+async function sendAiChatMessage(userText, isVoice = false) {
+  if (!userText || !userText.trim()) return;
+  sfx.playClick();
+
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
+
+  // Add User Message bubble
+  const userMsgId = `user-msg-${Date.now()}`;
+  const userBubbleHtml = `
+    <div id="${userMsgId}" class="flex justify-end items-start gap-2">
+      <div class="max-w-[85%] bg-blue-600 text-white rounded-2xl rounded-tr-none px-3.5 py-2.5 shadow-md">
+        <div class="flex items-center gap-1.5 mb-1 justify-end">
+          <span class="text-[10px] font-bold text-blue-200">You (${state.currentCustomerName})</span>
+          ${isVoice ? '<i data-lucide="mic" class="w-3 h-3 text-amber-300"></i>' : ''}
+        </div>
+        <p class="text-xs leading-relaxed break-words">${escapeHtml(userText)}</p>
+      </div>
+    </div>
+  `;
+  container.insertAdjacentHTML("beforeend", userBubbleHtml);
+
+  // Add typing indicator
+  const typingId = `ai-typing-${Date.now()}`;
+  const typingHtml = `
+    <div id="${typingId}" class="flex justify-start items-start gap-2">
+      <div class="w-7 h-7 rounded-xl bg-indigo-600 flex items-center justify-center text-white flex-shrink-0 mt-1 shadow-sm">
+        <i data-lucide="bot" class="w-4 h-4"></i>
+      </div>
+      <div class="bg-slate-800/90 text-blue-200 rounded-2xl rounded-tl-none px-4 py-3 border border-indigo-500/30 shadow-md flex items-center space-x-1.5">
+        <span class="w-2 h-2 rounded-full bg-blue-400 animate-bounce"></span>
+        <span class="w-2 h-2 rounded-full bg-indigo-400 animate-bounce" style="animation-delay: 0.15s"></span>
+        <span class="w-2 h-2 rounded-full bg-amber-400 animate-bounce" style="animation-delay: 0.3s"></span>
+        <span class="text-[10px] text-blue-300 font-bold ml-1.5">Seva Mitra is thinking...</span>
+      </div>
+    </div>
+  `;
+  container.insertAdjacentHTML("beforeend", typingHtml);
+  scrollAiMessagesToBottom();
+  safeCreateIcons();
+
+  // Process response (backend or client fallback)
+  await fetchAiChatResponse(userText, isVoice, typingId);
+}
+
+async function fetchAiChatResponse(userText, isVoice, typingId) {
+  let aiData = null;
+
+  // 1. Try Live FastAPI backend endpoint
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/ai/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: userText,
+        language: state.aiChatLanguage || "auto",
+        customer_name: state.currentCustomerName || "Citizen"
+      })
+    });
+
+    if (res.ok) {
+      aiData = await res.json();
+    }
+  } catch (err) {
+    console.info("Backend AI endpoint unreachable, switching to autonomous client-side NLP:", err);
+  }
+
+  // 2. Fallback to client-side deterministic NLP engine if backend not reachable
+  if (!aiData || !aiData.success) {
+    aiData = clientSideAiIntentParser(userText);
+  }
+
+  // Remove typing indicator
+  const typingEl = document.getElementById(typingId);
+  if (typingEl) typingEl.remove();
+
+  // 3. If service(s) and sub-services were selected, automatically apply them to application state!
+  if (aiData.services && aiData.services.length > 0) {
+    state.aiSelectedServicesBundle = aiData.services;
+    const primary = aiData.services[0];
+    applyAiServiceSelection(primary.service_id, primary.sub_service_ids, false);
+  } else if (aiData.service_id && aiData.sub_service_ids && aiData.sub_service_ids.length > 0) {
+    applyAiServiceSelection(aiData.service_id, aiData.sub_service_ids, false);
+  }
+
+  // 4. Render AI response bubble with Interactive Action Card
+  renderAiMessageBubble(aiData, isVoice);
+}
+
+// Client-Side Deterministic NLP Engine with Multi-Service & Multi-Subservice Intelligence
+function clientSideAiIntentParser(userText) {
+  const textLower = userText.toLowerCase().trim();
+  const isHi = state.currentLanguage === "hi" || /[\u0900-\u097F]/.test(userText);
+  const isGu = state.aiChatLanguage === "gu" || /[\u0A80-\u0AFF]/.test(userText);
+
+  // Check greetings
+  if (/^(hi|hello|hey|namaste|namaskar|नमस्ते|प्रणाम|kem cho)\b/i.test(textLower) && textLower.split(" ").length <= 3) {
+    return {
+      success: true,
+      detected_language: isHi ? "hi" : (isGu ? "gu" : "en"),
+      service_id: null,
+      service_name: null,
+      service_name_hi: null,
+      sub_service_ids: [],
+      sub_services: [],
+      estimated_wage: 0.0,
+      urgency: "normal",
+      is_multi_service: false,
+      services: [],
+      action: "greeting",
+      reply: isHi
+        ? "नमस्ते! मैं सेवा मित्र हूँ, आपका सहकारी एआई सहायक। अपने घर के किसी भी काम (जैसे नल का रिसाव, पंखा खराब होना, सोफा सफाई) के बारे में बताएं या बोलें, मैं तुरंत सही सेवा और कार्य चुन दूँगा!"
+        : "Hello! I am Seva Mitra, your Multilingual Cooperative AI Assistant. Describe what needs repair (e.g. 'I have water leaking', 'Switchboard spark', 'Need sofa cleaning'), and I will automatically select the verified technician and tasks for you!"
+    };
+  }
+
+  const matchedServices = [];
+
+  // Helper to test if a keyword exists, using word boundaries for short alphanumeric terms to prevent substring collisions (e.g. 'car' in 'carpet')
+  function hasWord(wordsArray) {
+    return wordsArray.some(w => {
+      const wLower = w.toLowerCase();
+      if (wLower.length <= 4 && !/[\u0900-\u0DFF]/.test(wLower)) {
+        return new RegExp(`\\b${wLower}\\b`, 'i').test(textLower);
+      }
+      return textLower.includes(wLower);
+    });
+  }
+
+  // Helper to add trade match cleanly
+  function addTradeMatch(serviceId, matchedSubs) {
+    if (!matchedSubs || matchedSubs.length === 0) return;
+    const sObj = SERVICES.find(s => s.id === serviceId) || { id: serviceId, name: serviceId, name_hi: serviceId, icon: "tool", badge: "Co-op Trade", badge_hi: "सहकारी ट्रेड" };
+    // Deduplicate subs by id
+    const seen = new Set();
+    const uniqueSubs = [];
+    matchedSubs.forEach(s => {
+      if (s && s.id && !seen.has(s.id)) {
+        seen.add(s.id);
+        uniqueSubs.push(s);
+      }
+    });
+    if (uniqueSubs.length === 0) return;
+    const wage = uniqueSubs.reduce((sum, s) => sum + (s.base || 0), 0);
+    matchedServices.push({
+      service_id: serviceId,
+      service_name: sObj.name,
+      service_name_hi: sObj.name_hi,
+      icon: sObj.icon,
+      badge: sObj.badge,
+      badge_hi: sObj.badge_hi,
+      sub_service_ids: uniqueSubs.map(s => s.id),
+      sub_services: uniqueSubs,
+      estimated_wage: wage,
+      cooperative: "Delhi Central Labour Cooperative Federation"
+    });
+  }
+
+  // 1. Plumber (including direct requirement 'I have water leaking')
+  const waterLeakWords = ["water leak", "water leaking", "leaking water", "leak in pipe", "pipe leaking", "tap leak", "dripping", "पानी टपक", "पानी का रिसाव", "पानी बह रहा", "नल टपक", "paani leak", "nal kharab"];
+  const generalPlumberWords = ["plumber", "pipe", "tap", "drain", "sink", "toilet", "flush", "tank", "motor", "shower", "geyser", "nal", "pani", "कमोड", "सीवर", "नाली", "प्लम्बर", "वाशबेसिन"];
+
+  if (hasWord(waterLeakWords) || hasWord(generalPlumberWords)) {
+    const pCatalog = SUB_SERVICES_CATALOG.plumber || [];
+    const subs = [];
+    if (textLower.includes("toilet") || textLower.includes("flush") || textLower.includes("कमोड") || textLower.includes("फ्लश")) {
+      subs.push(pCatalog.find(s => s.id === "toilet_flush_repair") || pCatalog[1]);
+    }
+    if (textLower.includes("drain") || textLower.includes("sink") || textLower.includes("clog") || textLower.includes("chok") || textLower.includes("नाली") || textLower.includes("सिंक")) {
+      subs.push(pCatalog.find(s => s.id === "drainage_blockage") || pCatalog[2]);
+    }
+    if (textLower.includes("tank") || textLower.includes("motor") || textLower.includes("pump") || textLower.includes("टंकी") || textLower.includes("मोटर")) {
+      subs.push(pCatalog.find(s => s.id === "water_tank_motor") || pCatalog[3]);
+    }
+    if (textLower.includes("shower") || textLower.includes("bath") || textLower.includes("शावर") || textLower.includes("गीज़र")) {
+      subs.push(pCatalog.find(s => s.id === "bath_fitting_install") || pCatalog[4]);
+    }
+    if (subs.length === 0 || hasWord(waterLeakWords)) {
+      const leakSub = pCatalog.find(s => s.id === "tap_pipe_leakage") || pCatalog[0];
+      if (!subs.some(s => s.id === leakSub.id)) subs.unshift(leakSub);
+    }
+    addTradeMatch("plumber", subs);
+  }
+
+  // 2. Electrician
+  if (hasWord(["electric", "wire", "switch", "socket", "fan", "light", "mcb", "fuse", "short circuit", "spark", "bijli", "tarr", "बिजली", "पंखा", "स्विच", "सॉकेट", "इलेक्ट्रीशियन", "झूमर", "बल्ब"])) {
+    const eCatalog = SUB_SERVICES_CATALOG.electrician || [];
+    const subs = [];
+    if (textLower.includes("fan") || textLower.includes("पंखा") || textLower.includes("regulator") || textLower.includes("capacitor")) {
+      subs.push(eCatalog.find(s => s.id === "fan_installation") || eCatalog[1]);
+    }
+    if (textLower.includes("light") || textLower.includes("led") || textLower.includes("chandelier") || textLower.includes("bulb") || textLower.includes("झूमर") || textLower.includes("रोशनी")) {
+      subs.push(eCatalog.find(s => s.id === "lighting_fitting") || eCatalog[2]);
+    }
+    if (textLower.includes("mcb") || textLower.includes("short circuit") || textLower.includes("heavy") || textLower.includes("ac point") || textLower.includes("tripping")) {
+      subs.push(eCatalog.find(s => s.id === "appliance_wiring") || eCatalog[3]);
+    }
+    if (textLower.includes("audit") || textLower.includes("inspection") || textLower.includes("निरीक्षण")) {
+      subs.push(eCatalog.find(s => s.id === "full_home_inspection") || eCatalog[4]);
+    }
+    if (subs.length === 0) {
+      subs.push(eCatalog.find(s => s.id === "switch_socket_repair") || eCatalog[0]);
+    }
+    addTradeMatch("electrician", subs);
+  }
+
+  // 3. Carpentry
+  if (hasWord(["carpenter", "wood", "furniture", "chair", "table", "bed", "door", "lock", "hinge", "wardrobe", "drawer", "almirah", "sofa frame", "bookshelf", "window pane", "mosquito net", "बढ़ई", "दरवाजा", "ताला", "अलमारी", "फर्नीचर", "कुर्सी", "मेज", "लकड़ी", "खिड़की"])) {
+    const cCatalog = SUB_SERVICES_CATALOG.carpentry || [];
+    const subs = [];
+    if (textLower.includes("door") || textLower.includes("lock") || textLower.includes("hinge") || textLower.includes("दरवाजा") || textLower.includes("ताला") || textLower.includes("कुंडी")) {
+      subs.push(cCatalog.find(s => s.id === "door_lock_hinge") || cCatalog[1]);
+    }
+    if (textLower.includes("wardrobe") || textLower.includes("drawer") || textLower.includes("channel") || textLower.includes("almirah") || textLower.includes("अलमारी") || textLower.includes("दराज")) {
+      subs.push(cCatalog.find(s => s.id === "wardrobe_modular") || cCatalog[2]);
+    }
+    if (textLower.includes("window") || textLower.includes("mesh") || textLower.includes("mosquito") || textLower.includes("खिड़की") || textLower.includes("जाली")) {
+      subs.push(cCatalog.find(s => s.id === "window_mesh_repair") || cCatalog[4]);
+    }
+    if (textLower.includes("shelf") || textLower.includes("mandir") || textLower.includes("desk") || textLower.includes("शेल्फ") || textLower.includes("मंदिर")) {
+      subs.push(cCatalog.find(s => s.id === "custom_woodwork") || cCatalog[3]);
+    }
+    if (subs.length === 0) {
+      subs.push(cCatalog.find(s => s.id === "furniture_repair") || cCatalog[0]);
+    }
+    addTradeMatch("carpentry", subs);
+  }
+
+  // 4. Cleaning
+  if (hasWord(["clean", "safai", "dust", "mop", "sweep", "sofa", "carpet", "chimney", "bathroom", "washroom", "mattress", "सफाई", "धुलाई", "पोछा", "झाड़ू", "किचन", "चिमनी", "कालीन", "सोफा"])) {
+    const clCatalog = SUB_SERVICES_CATALOG.cleaning || [];
+    const subs = [];
+    if (textLower.includes("kitchen") || textLower.includes("chimney") || textLower.includes("किचन") || textLower.includes("रसोई")) {
+      subs.push(clCatalog.find(s => s.id === "kitchen_deep_clean") || clCatalog[1]);
+    }
+    if (textLower.includes("sofa") || textLower.includes("carpet") || textLower.includes("सोफा") || textLower.includes("कालीन") || textLower.includes("mattress")) {
+      subs.push(clCatalog.find(s => s.id === "sofa_carpet_wash") || clCatalog[3]);
+    }
+    if (textLower.includes("bathroom") || textLower.includes("tile") || textLower.includes("बाथरूम") || textLower.includes("toilet clean")) {
+      subs.push(clCatalog.find(s => s.id === "bathroom_cleaning") || clCatalog[2]);
+    }
+    if (textLower.includes("post paint") || textLower.includes("renovation")) {
+      subs.push(clCatalog.find(s => s.id === "post_paint_clean") || clCatalog[4]);
+    }
+    if (subs.length === 0) {
+      subs.push(clCatalog.find(s => s.id === "deep_home_cleaning") || clCatalog[0]);
+    }
+    addTradeMatch("cleaning", subs);
+  }
+
+  // 5. Tailoring
+  if (hasWord(["tailor", "stitch", "alter", "hemming", "pant", "suit", "blouse", "kurta", "pajama", "darji", "silai", "दर्जी", "सिलाई", "रफू", "ब्लाउज", "कुर्ता", "पर्दा"])) {
+    const tCatalog = SUB_SERVICES_CATALOG.tailoring || [];
+    const subs = [];
+    if (textLower.includes("blouse") || textLower.includes("suit") || textLower.includes("ब्लाउज")) {
+      subs.push(tCatalog.find(s => s.id === "blouse_suit_stitching") || tCatalog[1]);
+    }
+    if (textLower.includes("kurta") || textLower.includes("shirt") || textLower.includes("pajama") || textLower.includes("कुर्ता")) {
+      subs.push(tCatalog.find(s => s.id === "kurta_shirt_stitching") || tCatalog[3]);
+    }
+    if (textLower.includes("curtain") || textLower.includes("cushion") || textLower.includes("पर्दा")) {
+      subs.push(tCatalog.find(s => s.id === "curtains_cushion_covers") || tCatalog[2]);
+    }
+    if (subs.length === 0) {
+      subs.push(tCatalog.find(s => s.id === "clothes_alteration") || tCatalog[0]);
+    }
+    addTradeMatch("tailoring", subs);
+  }
+
+  // 6. Driver
+  if (hasWord(["driver", "drive", "car", "taxi", "chauffeur", "airport", "highway", "outstation", "chalak", "gadi", "tempo", "van", "ड्राइवर", "गाड़ी", "चालक", "एयरपोर्ट", "हाइवे"])) {
+    const dCatalog = SUB_SERVICES_CATALOG.driver || [];
+    const subs = [];
+    if (textLower.includes("airport") || textLower.includes("station") || textLower.includes("flight") || textLower.includes("एयरपोर्ट")) {
+      subs.push(dCatalog.find(s => s.id === "airport_station_transfer") || dCatalog[2]);
+    }
+    if (textLower.includes("highway") || textLower.includes("outstation") || textLower.includes("हाइवे")) {
+      subs.push(dCatalog.find(s => s.id === "outstation_highway_driver") || dCatalog[1]);
+    }
+    if (textLower.includes("tempo") || textLower.includes("pickup") || textLower.includes("van") || textLower.includes("टेम्पो")) {
+      subs.push(dCatalog.find(s => s.id === "heavy_vehicle_van") || dCatalog[4]);
+    }
+    if (subs.length === 0) {
+      subs.push(dCatalog.find(s => s.id === "local_city_chauffeur") || dCatalog[0]);
+    }
+    addTradeMatch("driver", subs);
+  }
+
+  // 7. Painting
+  if (hasWord(["paint", "wall", "putty", "seepage", "damp", "whitewash", "waterproof", "texture", "पेंट", "रंग", "सफेदी", "सीलन", "पुट्टी"])) {
+    const pCatalog = SUB_SERVICES_CATALOG.painting || [];
+    const subs = [];
+    if (textLower.includes("seepage") || textLower.includes("damp") || textLower.includes("waterproof") || textLower.includes("सीलन")) {
+      subs.push(pCatalog.find(s => s.id === "waterproof_dampproof") || pCatalog[1]);
+    }
+    if (textLower.includes("texture") || textLower.includes("stencil") || textLower.includes("टेक्सचर")) {
+      subs.push(pCatalog.find(s => s.id === "texture_stencil") || pCatalog[3]);
+    }
+    if (subs.length === 0) {
+      subs.push(pCatalog.find(s => s.id === "room_wall_paint") || pCatalog[0]);
+    }
+    addTradeMatch("painting", subs);
+  }
+
+  // 8. Pottery
+  if (hasWord(["pottery", "clay", "terracotta", "tandoor", "handi", "matka", "diya", "planter", "kumhar", "कुम्हार", "मिट्टी", "मटका", "तंदूर", "दीया"])) {
+    const potCatalog = SUB_SERVICES_CATALOG.pottery || [];
+    const subs = [];
+    if (textLower.includes("tandoor") || textLower.includes("handi") || textLower.includes("तंदूर") || textLower.includes("हांडी")) {
+      subs.push(potCatalog.find(s => s.id === "earthen_pots_tandoor") || potCatalog[0]);
+    }
+    if (textLower.includes("planter") || textLower.includes("terracotta") || textLower.includes("गमले")) {
+      subs.push(potCatalog.find(s => s.id === "decorative_terracotta") || potCatalog[1]);
+    }
+    if (textLower.includes("diya") || textLower.includes("festival") || textLower.includes("दीये")) {
+      subs.push(potCatalog.find(s => s.id === "clay_diyas_festival") || potCatalog[2]);
+    }
+    if (subs.length === 0) {
+      subs.push(potCatalog.find(s => s.id === "clay_water_dispenser") || potCatalog[4] || potCatalog[0]);
+    }
+    addTradeMatch("pottery", subs);
+  }
+
+  // 9. Blacksmith
+  if (hasWord(["blacksmith", "welding", "iron gate", "grill", "shutter", "forging", "sharpening", "luhar", "लोहार", "लुहार", "वेल्डिंग", "लोहा"])) {
+    const bCatalog = SUB_SERVICES_CATALOG.blacksmith || [];
+    const subs = [];
+    if (textLower.includes("gate") || textLower.includes("welding") || textLower.includes("grill") || textLower.includes("वेल्डिंग")) {
+      subs.push(bCatalog.find(s => s.id === "gate_grill_welding") || bCatalog[0]);
+    }
+    if (textLower.includes("shutter") || textLower.includes("spring") || textLower.includes("शटर")) {
+      subs.push(bCatalog.find(s => s.id === "shutter_channel_fix") || bCatalog[2]);
+    }
+    if (textLower.includes("sharpening") || textLower.includes("knife") || textLower.includes("axe") || textLower.includes("धार")) {
+      subs.push(bCatalog.find(s => s.id === "tool_sharpening_forging") || bCatalog[1]);
+    }
+    if (subs.length === 0) {
+      subs.push(bCatalog.find(s => s.id === "gate_grill_welding") || bCatalog[0]);
+    }
+    addTradeMatch("blacksmith", subs);
+  }
+
+  // If no match
+  if (matchedServices.length === 0) {
+    return {
+      success: true,
+      detected_language: isHi ? "hi" : "en",
+      service_id: null,
+      service_name: null,
+      service_name_hi: null,
+      sub_service_ids: [],
+      sub_services: [],
+      estimated_wage: 0.0,
+      urgency: "normal",
+      is_multi_service: false,
+      services: [],
+      action: "clarification_needed",
+      reply: isHi
+        ? "मैं आपकी आवश्यकता को पूरी तरह पहचान नहीं सका। कृपया अपनी समस्या को थोड़ा और विस्तार से बताएं (उदा. नल से पानी टपकना, पंखा खराब होना, सोफा धोना या ड्राइवर चाहिए)।"
+        : "I couldn't pinpoint the exact trade for that. Please describe the problem in a few words (e.g., 'water leaking under washbasin', 'ceiling fan not spinning', 'need deep cleaning')."
+    };
+  }
+
+  const isMulti = matchedServices.length > 1;
+  const primary = matchedServices[0];
+  const totalWage = matchedServices.reduce((sum, s) => sum + s.estimated_wage, 0);
+  const allSubIds = matchedServices.flatMap(s => s.sub_service_ids);
+  const allSubs = matchedServices.flatMap(s => s.sub_services);
+
+  let reply = "";
+  if (isMulti) {
+    if (isHi) {
+      const breakdownHi = matchedServices.map(s => `• **${s.service_name_hi || s.service_name}**: ${s.sub_services.map(sub => `'${sub.title_hi || sub.title}' (₹${sub.base})`).join(", ")} — उप-कुल: **₹${s.estimated_wage.toFixed(2)}**`).join("\n");
+      reply = `मैंने आपकी आवश्यकता में **${matchedServices.length} विभिन्न सहकारी सेवाएँ** पहचानी हैं:\n\n${breakdownHi}\n\n• कुल संयुक्त पारिश्रमिक: **₹${totalWage.toFixed(2)}** (100% सीधा सहकारी कारीगरों को, 0% बिचौलिया कटौती)\n• आगमन अनुमान: **10-15 मिनट**\n\nमैंने सभी संबंधित कार्य स्वचालित रूप से जोड़ दिए हैं। आप नीचे दिए गए बटन से पूरा मल्टी-सर्विस बंडल एक साथ या अलग-अलग सेवा बुक कर सकते हैं!`;
+    } else {
+      const breakdownEn = matchedServices.map(s => `• **${s.service_name}**: ${s.sub_services.map(sub => `'${sub.title}' (₹${sub.base})`).join(", ")} — Subtotal: **₹${s.estimated_wage.toFixed(2)}**`).join("\n");
+      reply = `I identified **multiple cooperative services (${matchedServices.length} trades)** based on your request:\n\n${breakdownEn}\n\n• Combined Fair Wage: **₹${totalWage.toFixed(2)}** (100% direct to verified cooperative artisans, 0% platform commission)\n• Estimated Arrival: **10-15 mins**\n\nAll matching trade tasks are auto-configured below. You can confirm the multi-service bundle or book any trade individually!`;
+    }
+  } else {
+    const sObj = SERVICES.find(s => s.id === primary.service_id) || primary;
+    const subTitlesEn = primary.sub_services.map(s => `'${s.title}' (₹${s.base})`).join(", ");
+    const subTitlesHi = primary.sub_services.map(s => `'${s.title_hi || s.title}' (₹${s.base})`).join(", ");
+    reply = isHi
+      ? `मैंने आपकी समस्या पहचानी है! मैंने आपके लिए प्रमाणित **${sObj.name_hi || sObj.name}** का चयन किया है और संबंधित कार्य ${subTitlesHi} स्वचालित रूप से जोड़ दिए हैं।\n\n• कुल पारिश्रमिक: **₹${totalWage.toFixed(2)}** (100% सीधा सहकारी कारीगर को)\n• सहकारी समिति: **दिल्ली सेंट्रल लेबर को-ऑपरेटिव**\n\nआप सीधे नीचे दिए गए बटन पर क्लिक करके बुकिंग की पुष्टि कर सकते हैं!`
+      : `I detected your requirement! I have automatically selected our certified **${sObj.name}** and added the specific task(s): ${subTitlesEn}.\n\n• Direct Fair Wage: **₹${totalWage.toFixed(2)}** (100% to worker, 0% platform cut)\n• Cooperative Provider: **Delhi Central Labour Cooperative Federation**\n\nClick '⚡ Confirm & Book Now' below to proceed!`;
+  }
+
+  return {
+    success: true,
+    detected_language: isHi ? "hi" : "en",
+    service_id: primary.service_id,
+    service_name: primary.service_name,
+    service_name_hi: primary.service_name_hi,
+    sub_service_ids: isMulti ? allSubIds : primary.sub_service_ids,
+    sub_services: isMulti ? allSubs : primary.sub_services,
+    estimated_wage: totalWage,
+    cooperative: primary.cooperative,
+    is_multi_service: isMulti,
+    services: matchedServices,
+    urgency: "normal",
+    action: "service_selected",
+    reply: reply
+  };
+}
+
+function renderAiMessageBubble(aiData, isVoice) {
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
+
+  const msgId = `ai-msg-${Date.now()}`;
+  const isHi = state.currentLanguage === "hi" || aiData.detected_language === "hi";
+
+  // Check if multiple services or a single service was selected
+  let actionCardHtml = "";
+  if (aiData.services && aiData.services.length > 1) {
+    // Multi-Service Bundle Card
+    const bundleCardsHtml = aiData.services.map((s) => {
+      const sObj = SERVICES.find(srv => srv.id === s.service_id) || s;
+      const subTasksHtml = s.sub_services.map(sub => `
+        <div class="flex items-center justify-between text-[11px] bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-indigo-500/20">
+          <span class="flex items-center gap-1.5 font-bold text-white">
+            <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span>${isHi && sub.title_hi ? sub.title_hi : sub.title}</span>
+          </span>
+          <span class="font-mono font-bold text-amber-300">₹${sub.base.toFixed(2)}</span>
+        </div>
+      `).join("");
+      const singleSubIdsAttr = encodeURIComponent(JSON.stringify(s.sub_service_ids));
+
+      return `
+        <div class="p-2.5 bg-slate-900/80 rounded-xl border border-indigo-500/30 space-y-2">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-white text-xs">
+                <i data-lucide="${sObj.icon || 'wrench'}" class="w-3.5 h-3.5"></i>
+              </div>
+              <span class="text-xs font-black text-white">${isHi ? (sObj.name_hi || sObj.name) : sObj.name}</span>
+            </div>
+            <span class="font-mono font-black text-amber-300 text-xs">₹${s.estimated_wage.toFixed(2)}</span>
+          </div>
+          <div class="space-y-1">
+            ${subTasksHtml}
+          </div>
+          <div class="flex items-center justify-end pt-1">
+            <button type="button" onclick="confirmAiBooking('${s.service_id}', '${singleSubIdsAttr}')" class="text-[10px] font-bold text-blue-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-blue-900/40 hover:bg-blue-800 transition">
+              <span>Book Only ${isHi ? (sObj.name_hi || sObj.name) : sObj.name}</span>
+              <i data-lucide="arrow-right" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const encodedBundleAttr = encodeURIComponent(JSON.stringify(aiData.services));
+
+    actionCardHtml = `
+      <div class="mt-3 p-3 bg-gradient-to-br from-indigo-950 via-slate-900 to-blue-950 rounded-2xl border-2 border-indigo-400/40 shadow-xl space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-gradient-to-r from-emerald-500 to-blue-600 flex items-center justify-center text-white">
+              <i data-lucide="layers" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <span class="text-xs font-black text-white block">Multi-Service Cooperative Bundle</span>
+              <span class="text-[9px] text-emerald-400 font-bold">${aiData.services.length} Trades Auto-Selected • 100% Direct Wage</span>
+            </div>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-400/30">
+            Co-op Package
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          ${bundleCardsHtml}
+        </div>
+
+        <div class="pt-2 border-t border-indigo-500/30 flex items-center justify-between text-xs">
+          <div>
+            <span class="text-[10px] text-slate-400 block">Total Combined Fair Wage</span>
+            <span class="font-black text-amber-300 text-sm font-mono">₹${aiData.estimated_wage.toFixed(2)}</span>
+          </div>
+          <div class="text-right">
+            <span class="text-[10px] text-slate-400 block">Dispatch Federation</span>
+            <span class="text-[10px] text-blue-200 font-bold">Delhi Central Cooperative Federation</span>
+          </div>
+        </div>
+
+        <div class="pt-1 flex items-center gap-2">
+          <button type="button" onclick="confirmAiMultiBooking('${encodedBundleAttr}')" class="flex-1 py-2 px-3 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-md transition btn-tactile">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-300"></i>
+            <span>⚡ Confirm & Book Entire Bundle (₹${aiData.estimated_wage.toFixed(2)})</span>
+          </button>
+          <button type="button" onclick="customizeAiBooking('${aiData.service_id}')" class="py-2 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-[11px] font-bold border border-indigo-400/30 transition btn-tactile" title="Customize Tasks">
+            <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  } else if (aiData.service_id && aiData.sub_services && aiData.sub_services.length > 0) {
+    const sObj = SERVICES.find(s => s.id === aiData.service_id) || SERVICES[0];
+    const subTasksHtml = aiData.sub_services.map(sub => `
+      <div class="flex items-center justify-between text-[11px] bg-slate-900/80 px-2.5 py-1.5 rounded-lg border border-indigo-500/20">
+        <span class="flex items-center gap-1.5 font-bold text-white">
+          <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span>${isHi && sub.title_hi ? sub.title_hi : sub.title}</span>
+        </span>
+        <span class="font-mono font-bold text-amber-300">₹${sub.base.toFixed(2)}</span>
+      </div>
+    `).join("");
+
+    const subIdsAttr = encodeURIComponent(JSON.stringify(aiData.sub_service_ids));
+
+    actionCardHtml = `
+      <div class="mt-3 p-3 bg-gradient-to-br from-indigo-950 via-slate-900 to-blue-950 rounded-2xl border-2 border-indigo-400/40 shadow-lg space-y-2.5">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white">
+              <i data-lucide="${sObj.icon || 'wrench'}" class="w-4 h-4"></i>
+            </div>
+            <div>
+              <span class="text-xs font-black text-white block">${isHi ? sObj.name_hi : sObj.name}</span>
+              <span class="text-[9px] text-emerald-400 font-bold">100% Direct Cooperative Wage</span>
+            </div>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-bold border border-blue-400/30">
+            ${isHi ? sObj.badge_hi : sObj.badge}
+          </span>
+        </div>
+
+        <div class="space-y-1">
+          <span class="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Auto-Selected Tasks (${aiData.sub_services.length}):</span>
+          ${subTasksHtml}
+        </div>
+
+        <div class="pt-2 border-t border-indigo-500/30 flex items-center justify-between text-xs">
+          <div>
+            <span class="text-[10px] text-slate-400 block">Total Base Fair Wage</span>
+            <span class="font-black text-amber-300 text-sm font-mono">₹${aiData.estimated_wage.toFixed(2)}</span>
+          </div>
+          <div class="text-right">
+            <span class="text-[10px] text-slate-400 block">Cooperative Federation</span>
+            <span class="text-[10px] text-blue-200 font-bold">${aiData.cooperative || "Delhi Central Labour Coop"}</span>
+          </div>
+        </div>
+
+        <div class="pt-1 flex items-center gap-2">
+          <button type="button" onclick="confirmAiBooking('${aiData.service_id}', '${subIdsAttr}')" class="flex-1 py-2 px-3 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-md transition btn-tactile">
+            <i data-lucide="zap" class="w-3.5 h-3.5 text-amber-300"></i>
+            <span>⚡ Confirm & Book Now</span>
+          </button>
+          <button type="button" onclick="customizeAiBooking('${aiData.service_id}')" class="py-2 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-[11px] font-bold border border-indigo-400/30 transition btn-tactile" title="Customize Tasks">
+            <i data-lucide="sliders" class="w-3.5 h-3.5"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  const aiBubbleHtml = `
+    <div id="${msgId}" class="flex justify-start items-start gap-2">
+      <div class="w-7 h-7 rounded-xl bg-indigo-600 flex items-center justify-center text-white flex-shrink-0 mt-1 shadow-sm">
+        <i data-lucide="bot" class="w-4 h-4"></i>
+      </div>
+      <div class="max-w-[88%] bg-slate-800/90 text-blue-100 rounded-2xl rounded-tl-none p-3.5 border border-indigo-500/30 shadow-md">
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="font-bold text-[10px] text-amber-300">Seva Mitra AI</span>
+          <button onclick="speakAiMessage('${msgId}')" title="Listen aloud" class="text-slate-400 hover:text-amber-300 transition">
+            <i data-lucide="volume-2" class="w-3 h-3"></i>
+          </button>
+        </div>
+        <div class="text-xs leading-relaxed space-y-1.5 break-words" id="${msgId}-text">
+          ${formatMarkdownReply(aiData.reply)}
+        </div>
+        ${actionCardHtml}
+      </div>
+    </div>
+  `;
+
+  container.insertAdjacentHTML("beforeend", aiBubbleHtml);
+  scrollAiMessagesToBottom();
+  safeCreateIcons();
+
+  // If user used voice OR TTS is active, speak aloud
+  if (isVoice || state.aiTtsEnabled) {
+    speakAiText(aiData.reply, aiData.detected_language);
+  }
+}
+
+function speakAiMessage(msgId) {
+  const el = document.getElementById(`${msgId}-text`);
+  if (!el) return;
+  speakAiText(el.innerText, state.currentLanguage);
+}
+
+function speakAiText(text, lang) {
+  if (!state.aiTtsEnabled) return;
+  if (!("speechSynthesis" in window)) return;
+
+  try {
+    window.speechSynthesis.cancel();
+    // Clean text of markdown asterisks and bullets
+    const cleanText = (text || "")
+      .replace(/[*#_`~]/g, "")
+      .replace(/•/g, "")
+      .replace(/\[.*?\]\(.*?\)/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!cleanText) return;
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    let langCode = "en-IN";
+    if (lang === "hi" || state.currentLanguage === "hi") langCode = "hi-IN";
+    else if (lang === "gu") langCode = "gu-IN";
+    else if (lang === "mr") langCode = "mr-IN";
+    else if (lang === "bn") langCode = "bn-IN";
+    else if (lang === "ta") langCode = "ta-IN";
+    else langCode = "en-IN";
+
+    utterance.lang = langCode;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.warn("TTS non-fatal:", err);
+  }
+}
+
+function applyAiServiceSelection(serviceId, subServiceIds, openModal = false) {
+  if (!serviceId) return;
+
+  // 1. Debarment check
+  const debarCheck = isCustomerDebarredForService(state.currentCustomerName, serviceId);
+  if (debarCheck.debarred) {
+    sfx.playFallbackWarning();
+    openServiceDebarmentModal(serviceId, debarCheck.reason);
+    return;
+  }
+
+  // 2. Set active service
+  state.selectedService = serviceId;
+
+  // 3. Populate matching sub-services
+  const catalog = SUB_SERVICES_CATALOG[serviceId] || [];
+  let matchedSubs = [];
+  if (Array.isArray(subServiceIds) && subServiceIds.length > 0) {
+    matchedSubs = catalog.filter(sub => subServiceIds.includes(sub.id));
+  }
+  if (matchedSubs.length === 0 && catalog.length > 0) {
+    matchedSubs = [catalog[0]];
+  }
+
+  state.selectedSubServices = matchedSubs;
+  state.selectedSubService = matchedSubs[0] || null;
+
+  // 4. Update worker card & map
+  try {
+    const matchingWorker = WORKERS.find(w => w.skill === serviceId && w.is_available) || WORKERS[0];
+    state.activeWorker = matchingWorker;
+    updateWorkerCardUI(matchingWorker);
+    updateMapPins();
+  } catch (e) {
+    console.warn("Worker update non-fatal:", e);
+  }
+
+  // 5. Update UI
+  try {
+    initServiceGrid();
+    calculateLiveQuote();
+    renderSubServices(serviceId);
+  } catch (e) {
+    console.warn("Quote calculation non-fatal:", e);
+  }
+
+  // Highlight service card in grid
+  try {
+    const cardEl = document.getElementById(`service-card-${serviceId}`);
+    if (cardEl) {
+      cardEl.classList.add("ring-4", "ring-indigo-500", "scale-[1.02]");
+      setTimeout(() => cardEl.classList.remove("scale-[1.02]"), 800);
+    }
+  } catch (e) {}
+
+  showToast(`AI selected: ${serviceId.toUpperCase()} with ${state.selectedSubServices.length} task(s)`, "success");
+
+  // 6. Open modal if requested
+  if (openModal) {
+    openServiceBookingModal(serviceId, 2);
+  }
+}
+
+function confirmAiBooking(serviceId, subIdsEncoded) {
+  sfx.playClick();
+  let subIds = [];
+  try {
+    subIds = JSON.parse(decodeURIComponent(subIdsEncoded));
+  } catch (e) {
+    subIds = [];
+  }
+  applyAiServiceSelection(serviceId, subIds, true);
+}
+
+function confirmAiMultiBooking(bundleEncoded) {
+  sfx.playClick();
+  let bundle = [];
+  try {
+    bundle = JSON.parse(decodeURIComponent(bundleEncoded));
+  } catch (e) {
+    bundle = [];
+  }
+  if (!bundle || bundle.length === 0) return;
+
+  state.aiSelectedServicesBundle = bundle;
+  const primary = bundle[0];
+  applyAiServiceSelection(primary.service_id, primary.sub_service_ids, false);
+
+  const totalWage = bundle.reduce((sum, s) => sum + (s.estimated_wage || 0), 0);
+  const tradeNames = bundle.map(s => s.service_name).join(" + ");
+  showToast(`⚡ Multi-Trade Bundle Activated: ${tradeNames} (Total: ₹${totalWage.toFixed(2)})`, "success");
+
+  openServiceBookingModal(primary.service_id, 2);
+}
+
+function customizeAiBooking(serviceId) {
+  sfx.playClick();
+  openServiceBookingModal(serviceId, 1);
+}
+
+// Global browser window exports for AI Chatbot
+if (typeof window !== "undefined") {
+  window.openAiChatModal = openAiChatModal;
+  window.closeAiChatModal = closeAiChatModal;
+  window.toggleAiChat = toggleAiChat;
+  window.setAiChatLanguage = setAiChatLanguage;
+  window.toggleAiTts = toggleAiTts;
+  window.startAiVoiceInput = startAiVoiceInput;
+  window.stopAiVoiceInput = stopAiVoiceInput;
+  window.toggleAiVoiceRecording = toggleAiVoiceRecording;
+  window.startAiVoiceFromBanner = startAiVoiceFromBanner;
+  window.sendQuickPrompt = sendQuickPrompt;
+  window.handleAiChatSubmit = handleAiChatSubmit;
+  window.sendAiChatMessage = sendAiChatMessage;
+  window.applyAiServiceSelection = applyAiServiceSelection;
+  window.confirmAiBooking = confirmAiBooking;
+  window.confirmAiMultiBooking = confirmAiMultiBooking;
+  window.customizeAiBooking = customizeAiBooking;
+  window.initAiChatbot = initAiChatbot;
+  window.clientSideAiIntentParser = clientSideAiIntentParser;
+  window.speakAiMessage = speakAiMessage;
+}
 

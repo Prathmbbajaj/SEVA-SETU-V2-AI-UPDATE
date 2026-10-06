@@ -346,10 +346,73 @@ code, .font-mono {
   z-index: 150 !important;
 }
 
+/* AI Chatbot Pop-up Modal Display Guarantees */
+#modal-ai-chatbot.hidden {
+  display: none !important;
+}
+
+#modal-ai-chatbot:not(.hidden) {
+  display: flex !important;
+  z-index: 150 !important;
+}
+
 .modal-backdrop.hidden,
 .hidden {
   display: none !important;
 }
+
+/* ==========================================
+   AI MULTILINGUAL CHATBOT & VOICE STYLES
+   ========================================== */
+@keyframes wave-bounce-1 {
+  0%, 100% { height: 6px; }
+  50% { height: 18px; }
+}
+@keyframes wave-bounce-2 {
+  0%, 100% { height: 16px; }
+  50% { height: 8px; }
+}
+@keyframes wave-bounce-3 {
+  0%, 100% { height: 8px; }
+  50% { height: 20px; }
+}
+
+.animate-wave1 {
+  animation: wave-bounce-1 0.8s ease-in-out infinite;
+}
+.animate-wave2 {
+  animation: wave-bounce-2 0.7s ease-in-out infinite 0.15s;
+}
+.animate-wave3 {
+  animation: wave-bounce-3 0.9s ease-in-out infinite 0.3s;
+}
+
+#ai-chat-window.open,
+#modal-ai-chatbot:not(.hidden) #ai-chat-window {
+  transform: scale(1) translateY(0) !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+#ai-chat-messages::-webkit-scrollbar {
+  width: 5px;
+}
+#ai-chat-messages::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+}
+#ai-chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.5);
+  border-radius: 9999px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 
 
 

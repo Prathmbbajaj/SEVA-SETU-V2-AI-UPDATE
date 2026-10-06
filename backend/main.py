@@ -35,6 +35,7 @@ from seed_data import (
     WORKER_REJECTIONS_LOG
 )
 from ai_ocr import verify_worker_documents
+from ai_assistant import process_customer_ai_message, SERVICES_CATALOG
 
 app = FastAPI(
     title="Seva Setu API (Ministry of Cooperation)",
@@ -179,6 +180,12 @@ class DispatchRespondRequest(BaseModel):
     reason: Optional[str] = None
     notes: Optional[str] = None
     reassigned_worker_id: Optional[int] = None
+
+class AIChatRequest(BaseModel):
+    message: str = Field(..., json_schema_extra={"example": "I have water leaking from my pipe"})
+    language: Optional[str] = Field(default="auto", json_schema_extra={"example": "en"})
+    history: Optional[List[Dict[str, str]]] = Field(default=[], json_schema_extra={"example": []})
+    customer_name: Optional[str] = Field(default="Citizen", json_schema_extra={"example": "Citizen"})
 
 # ----------------- API Endpoints -----------------
 
@@ -357,6 +364,33 @@ def verify_document(req: DocumentVerifyRequest):
         doc_type=req.doc_type,
         image_base64_or_path=req.image_data or ""
     )
+
+# 8b. Multilingual AI Chatbot Assistant & Auto Sub-Service Selection (Seva Mitra)
+@app.post("/api/ai/chat", tags=["AI Assistant"])
+def ai_assistant_chat(req: AIChatRequest):
+    """
+    Multilingual conversational AI endpoint for citizens.
+    Automatically detects user problem (via speech-to-text or typed text in any language),
+    determines the matching cooperative service trade (e.g. plumber, electrician),
+    and selects the exact sub-service(s) (e.g. tap_pipe_leakage, fan_installation) with fair transparent pricing.
+    """
+    return process_customer_ai_message(
+        message=req.message,
+        language=req.language or "auto",
+        history=req.history or [],
+        customer_name=req.customer_name or "Citizen"
+    )
+
+@app.get("/api/ai/catalog", tags=["AI Assistant"])
+def get_ai_catalog():
+    """
+    Returns full catalog of cooperative trades and sub-services.
+    """
+    return {
+        "success": True,
+        "services": list(SERVICES_CATALOG.keys()),
+        "catalog": SERVICES_CATALOG
+    }
 
 # 9. Ministry of Cooperation Analytics
 @app.get("/api/ministry/analytics", tags=["Ministry Dashboard"])
